@@ -1,0 +1,98 @@
+1.pip install restframework
+2.定义models
+一.序列化
+    方式一：
+        publish_list= list(Publish.objects.all().values('name','email'))
+        return  HttpResponse(json.dumps(publish_list))
+    方式二：
+        temp=[]
+        for publish in Publish.objects.all():
+            temp.append({
+                'name':publish.name,
+                'email':publish.email
+            })
+        return  HttpResponse(json.dumps(temp))
+    方法三：
+        temp=[]
+        for publish in Publish.objects.all():
+            temp.append(model_to_dict(publish))   #需要导入from django.forms import model_to_dict
+        return  HttpResponse(json.dumps(temp))
+    方法四：django自带serializers
+        ret = serializers.serialize('json',Publish.objects.all())
+        return HttpResponse(ret)
+    方法五：restframework
+        from rest_framework import serializers
+        # 为queryset做序列化
+        class PublishSerializers(serializers.Serializer):
+            name = serializers.CharField()
+            email = serializers.CharField()
+
+二.request
+    1.原生django下的request
+        requerst.body:报文原数据
+            a=1&b=2
+        request.GET
+        request.POST
+            if contentType == urlencoded:
+                a=1&b=2------->{'a':1,'b':2}
+    2.restframework下的APIView
+        1.定义类
+        (1)
+        class BookSerializers(serializers.Serializer):
+            title = serializers.CharField()
+            price = serializers.IntegerField()
+            pub_date = serializers.DateField()
+            publish = serializers.CharField(source='publish.name')#一对多
+            # authors = serializers.CharField(source='authors.all') #多对多
+            authors = serializers.SerializerMethodField() #多对多
+            def get_authors(self,obj):
+                temp=[]
+                for obj in obj.authors.all():
+                    temp.append(obj.name)
+                return temp           #authors取决于返回的temp
+         (2)
+        class BookModelSerializers(serializers.ModelSerializer):
+            class Meta:
+                model = Book
+                fields = '__all__'
+            publish = serializers.CharField(source='publish.name')
+            authors = serializers.SerializerMethodField()  # 多对多
+            def get_authors(self, obj):
+                 temp=[]
+                 for obj in obj.authors.all():
+                     temp.append(obj.name)
+                 return temp
+
+        2.定义视图
+        class BookView(APIView):
+            def get(self,request):
+                book_list = Book.objects.all()
+                bs = BookSerializers(book_list,many=True)
+                return Response(bs.data)                    #序列化对象
+        3.反序列化
+        def post(self,request):
+            # POST请求的数据
+            bs = BookModelSerializers(data=request.data)
+            if bs.is_valid():
+                bs.save()
+                return Response(bs.data)
+            else:
+                return Response(bs.errors)
+        4.重写create()
+            def create(self, validated_data):
+                print(validated_data)
+                # book=Book.objects.create(title=validated_data['title'],price=validated_data['price'],pub_date=validated_data['pub_date'],publish=validated_data['publish']['pk'])
+                # book.authors.add(validated_data['authors'])
+                # return book
+                authors = validated_data.pop('authors')
+                obj = Book.objects.create(title=validated_data['title'],price=validated_data['price'],pub_date=validated_data['pub_date'], publish_id=validated_data['publish']['pk'])
+                obj.authors.add(*authors)
+                return obj
+
+
+
+
+
+
+
+
